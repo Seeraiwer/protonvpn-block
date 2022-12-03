@@ -1,8 +1,6 @@
-# protonvpn
+# Protonvpn
 
-Show ProtonVPN status. 
-
-Displays Public IP Address, Server Name and Server Load, if ProtonVPN is running
+Show ProtonVPN status and displays Public IP Address, Server Name and Server Load, if ProtonVPN is running
 
 # Dependencies
 
