@@ -1,7 +1,5 @@
 # protonvpn
 
-![screenshot](protonvpn.jpg)
-
 Show ProtonVPN status. 
 
 Displays Public IP Address, Server Name and Server Load, if ProtonVPN is running
