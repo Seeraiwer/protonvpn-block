@@ -1,7 +1,7 @@
 #!/bin/env bash
 OUTPUT=$(protonvpn-cli s)
 DISCONNECTED=$'\nNo active Proton VPN connection.'
-if [[ $OUTPUT == $DISCONNECTED ]]
+if [[ $OUTPUT == "$DISCONNECTED" ]]
 then
     echo " NOT RUNNING"
     echo " NOT RUNNING"
