@@ -1,12 +1,12 @@
 # Protonvpn
 
-Show ProtonVPN status and displays Public IP Address, Server Name and Server Load, if ProtonVPN is running
+Show ProtonVPN status and displays Public IP Address, Server Name and Server Load, if ProtonVPN is running in i3blocks
 
 # Dependencies
 
 * `protonvpn-cli`
 
-# Config
+# Config in i3blocks.conf
 
 ```
 [protonvpn]
