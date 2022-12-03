@@ -1,16 +1,17 @@
-OUTPUT=`protonvpn-cli --status`
-PROTON_STATUS=`echo "$OUTPUT" | awk '/\[ProtonVPN Status\]:[[:space:]]/ {print $3;}'`
+#!/bin/env bash
+OUTPUT=$(protonvpn-cli s)
 
-if [ $PROTON_STATUS = 'Running' ]
+if [[ $OUTPUT != "No active Proton VPN connection." ]]
 then
-    IP=`echo "$OUTPUT" | awk '/\[Public IP Address]:[[:space:]]/ {print $4;}'`
-    SERVER=`echo "$OUTPUT" | awk '/\[ProtonVPN\] \[Server Name\]:[[:space:]]/ {print $4;}'`
-    LOAD=`echo "$OUTPUT" | awk '/\[ProtonVPN\] \[Server Load\]:[[:space:]]/ {print $4;}'`
-    echo $IP@$SERVER [$LOAD\%]
-    echo $SERVER
+    IP=$(echo "$OUTPUT" | grep "IP:" | awk '{print $2}')
+    SERVER=$(echo "$OUTPUT" | grep "Server:" | awk '{print $2}')
+    LOAD=$(echo "$OUTPUT" | grep "Server Load" | awk '{print $3}')
+    
+    echo "$IP@$SERVER [$LOAD]"
+    echo "$SERVER"
     echo "#d335ff"
 else 
-    echo "NOT RUNNING"
-    echo "NOT RUNNING"
-    echo "#FF0000"
+    echo " NOT RUNNING"
+    echo " NOT RUNNING"
+    echo '#FF0000'
 fi
