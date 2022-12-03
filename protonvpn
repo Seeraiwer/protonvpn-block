@@ -1,8 +1,12 @@
 #!/bin/env bash
 OUTPUT=$(protonvpn-cli s)
-
-if [[ $OUTPUT != "No active Proton VPN connection." ]]
+DISCONNECTED=$'\nNo active Proton VPN connection.'
+if [[ $OUTPUT == $DISCONNECTED ]]
 then
+    echo " NOT RUNNING"
+    echo " NOT RUNNING"
+    echo "#FF0000"
+else 
     IP=$(echo "$OUTPUT" | grep "IP:" | awk '{print $2}')
     SERVER=$(echo "$OUTPUT" | grep "Server:" | awk '{print $2}')
     LOAD=$(echo "$OUTPUT" | grep "Server Load" | awk '{print $3}')
@@ -10,8 +14,4 @@ then
     echo "$IP@$SERVER [$LOAD]"
     echo "$SERVER"
     echo "#d335ff"
-else 
-    echo " NOT RUNNING"
-    echo " NOT RUNNING"
-    echo '#FF0000'
 fi
