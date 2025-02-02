@@ -3,16 +3,16 @@
 # Path to the ProtonVPN log file
 LOG_FILE="$HOME/.cache/Proton/VPN/logs/vpn-app.log"
 
-# Read the content of the log file
+# Read the log file content
 OUTPUT=$(tail -n 20 "$LOG_FILE")
 
 # Define the string to check if no VPN connection is active
 DISCONNECTED='Disconnected'
 
-# Check if the log output mentions a disconnection
+# Check if the log content mentions a disconnection
 if echo "$OUTPUT" | grep -q "$DISCONNECTED"; then
     echo "No VPN"
-    echo "#FF0000"  # Red for no VPN
+    echo "#FF0000"  # Red color for no VPN
     exit 0
 fi
 
@@ -20,23 +20,23 @@ fi
 NEW_IP=$(echo "$OUTPUT" | grep -oP 'IP:\s*\K[\d\.]+' | tail -n 1)
 NEW_SERVER=$(echo "$OUTPUT" | grep -oP 'Server:\s*\K[^/ ]+' | tail -n 1)
 
-# Check if we retrieved valid values (if not disconnected)
+# If neither IP nor server is found and "Disconnected" was NOT detected, assume VPN is off
 if [[ -z "$NEW_IP" || -z "$NEW_SERVER" ]]; then
-    echo "Connecting..."
-    echo "#FFFF00"  # Yellow for connection in progress
+    echo "No VPN"
+    echo "#FF0000"
     exit 0
 fi
 
-# Check internet connectivity with a ping
-PING_RESULT=$(ping -c 1 -W 1 8.8.8.8 2>/dev/null)
+# Check internet connectivity with a ping to 1.1.1.1 (Cloudflare DNS)
+PING_RESULT=$(ping -c 1 -W 1 1.1.1.1 2>/dev/null)
 
 if [[ $? -ne 0 ]]; then
     echo "Bad connection"
-    echo "#FF0000"  # Red for unstable connection
+    echo "#FF0000"  # Red color for an unstable connection
     exit 1
 fi
 
-# Extract ping response time
+# Extract the ping response time
 PING_TIME=$(echo "$PING_RESULT" | grep -oP 'time=\K[\d\.]+' | tail -n 1)
 
 # Define a latency threshold
@@ -44,8 +44,8 @@ THRESHOLD=100
 
 if [[ -n "$PING_TIME" && $(echo "$PING_TIME > $THRESHOLD" | bc -l) -eq 1 ]]; then
     echo "High latency: ${PING_TIME} ms"
-    echo "#FF0000"  # Red for high latency
+    echo "#FF0000"  # Red color for high latency
 else
     echo "$NEW_SERVER ($NEW_IP)"
-    echo "#d335ff"  # Purple for active VPN
+    echo "#d335ff"  # Purple color for active VPN
 fi
