@@ -2,37 +2,41 @@
 
 # Path to the ProtonVPN log file
 LOG_FILE="$HOME/.cache/Proton/VPN/logs/vpn-app.log"
+DEBUG_FILE="/tmp/protonvpn_debug.log"
 
-# Read the log file content
-OUTPUT=$(tail -n 20 "$LOG_FILE")
+# Ensure the debug file exists
+touch "$DEBUG_FILE"
 
-# Define the string to check if no VPN connection is active
-DISCONNECTED='Disconnected'
+# Read the last 30 lines of the log file
+OUTPUT=$(tail -n 30 "$LOG_FILE")
 
-# Check if the log content mentions a disconnection
-if echo "$OUTPUT" | grep -q "$DISCONNECTED"; then
-    echo "No VPN"
-    echo "#FF0000"  # Red color for no VPN
+# Extract the last recorded VPN state (Connected/Disconnected)
+VPN_STATE=$(echo "$OUTPUT" | grep -oP 'CONN:STATE_CHANGED \| \K\w+' | tail -n 1)
+
+# Extract the device's public IP (your new VPN IP)
+NEW_IP=$(echo "$OUTPUT" | grep -oP 'device_ip: "\K[\d\.]+' | tail -n 1)
+
+# Extract the VPN server name
+NEW_SERVER_NAME=$(echo "$OUTPUT" | grep -oP 'Server: *[^/ ]+' | awk '{print $2}' | tail -n 1)
+
+# Debugging output
+echo "DEBUG: VPN State = $VPN_STATE" >> "$DEBUG_FILE"
+echo "DEBUG: Extracted Device IP = $NEW_IP" >> "$DEBUG_FILE"
+echo "DEBUG: Extracted VPN Server Name = $NEW_SERVER_NAME" >> "$DEBUG_FILE"
+
+# If VPN is disconnected, show "No VPN ⚠️"
+if [[ "$VPN_STATE" == "Disconnected" || -z "$NEW_IP" || -z "$NEW_SERVER_NAME" ]]; then
+    echo "⚠️ No VPN ⚠️"
+    echo "DEBUG: VPN detected as disconnected" >> "$DEBUG_FILE"
     exit 0
 fi
 
-# Extract the IP address and server name from the log output
-NEW_IP=$(echo "$OUTPUT" | grep -oP 'IP:\s*\K[\d\.]+' | tail -n 1)
-NEW_SERVER=$(echo "$OUTPUT" | grep -oP 'Server:\s*\K[^/ ]+' | tail -n 1)
-
-# If neither IP nor server is found and "Disconnected" was NOT detected, assume VPN is off
-if [[ -z "$NEW_IP" || -z "$NEW_SERVER" ]]; then
-    echo "No VPN"
-    echo "#FF0000"
-    exit 0
-fi
-
-# Check internet connectivity with a ping to 1.1.1.1 (Cloudflare DNS)
+# Check internet connectivity using a ping to Cloudflare DNS (1.1.1.1)
 PING_RESULT=$(ping -c 1 -W 1 1.1.1.1 2>/dev/null)
 
 if [[ $? -ne 0 ]]; then
-    echo "Bad connection"
-    echo "#FF0000"  # Red color for an unstable connection
+    echo "⚠️ Bad connection ⚠️"
+    echo "DEBUG: Ping failed, no internet detected" >> "$DEBUG_FILE"
     exit 1
 fi
 
@@ -43,9 +47,9 @@ PING_TIME=$(echo "$PING_RESULT" | grep -oP 'time=\K[\d\.]+' | tail -n 1)
 THRESHOLD=100
 
 if [[ -n "$PING_TIME" && $(echo "$PING_TIME > $THRESHOLD" | bc -l) -eq 1 ]]; then
-    echo "High latency: ${PING_TIME} ms"
-    echo "#FF0000"  # Red color for high latency
+    echo "⚠️ High latency: ${PING_TIME} ms"
+    echo "DEBUG: High latency detected (${PING_TIME} ms)" >> "$DEBUG_FILE"
 else
-    echo "$NEW_SERVER ($NEW_IP)"
-    echo "#d335ff"  # Purple color for active VPN
+    echo "🟢 $NEW_SERVER_NAME ($NEW_IP)"
+    echo "DEBUG: VPN Active - Server Name: $NEW_SERVER_NAME, Device IP: $NEW_IP" >> "$DEBUG_FILE"
 fi
