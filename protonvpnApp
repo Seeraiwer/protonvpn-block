@@ -2,116 +2,116 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# ----- Config -----
 LOG_FILE="${HOME:-$PWD}/.cache/Proton/VPN/logs/vpn-app.log"
 DEBUG_FILE="/tmp/protonvpn_debug.log"
-
-# Seuil de latence configurable
-THRESHOLD="${LATENCY_THRESHOLD:-100}"
-
-# Hôte à pinguer et paramètres
+THRESHOLD="${LATENCY_THRESHOLD:-100}"   # ms
 PING_HOST="1.1.1.1"
-PING_TIMEOUT=1     # timeout en secondes
-PING_COUNT=2       # nombre de paquets ICMP
+PING_TIMEOUT=1                           # s
+PING_COUNT=2                             # paquets
 
+# ----- Utilitaires -----
 dbg() {
-    printf '%s %s\n' "[$(date '+%Y-%m-%d %H:%M:%S')]" "$*" >> "$DEBUG_FILE"
+  printf '%s %s\n' "[$(date '+%Y-%m-%d %H:%M:%S')]" "$*" >> "$DEBUG_FILE"
 }
 
 error_exit() {
-    echo "⚠️ $1" >&2
-    dbg "ERROR: $1"
-    exit "${2:-1}"
-}
-
-extract_last() {
-    local pattern="$1"
-    tail -n 30 "$LOG_FILE" \
-      | grep -oP "$pattern" \
-      | tail -n1 || true
+  echo "⚠️ $1" >&2
+  dbg "ERROR: $1"
+  exit "${2:-1}"
 }
 
 check_log_file() {
-    [[ -r "$LOG_FILE" ]] || error_exit "Impossible de lire le log VPN : $LOG_FILE" 2
+  [[ -r "$LOG_FILE" ]] || error_exit "Impossible de lire le log VPN : $LOG_FILE" 2
 }
-
-# Timeout (secondes) et nombre de paquets
-PING_TIMEOUT=1
-PING_COUNT=2
 
 check_ping() {
-    local out time
-    dbg "Tentative ping vers $PING_HOST (-c${PING_COUNT} -W${PING_TIMEOUT})"
-
-    # Premier essai
-    if ! out=$(ping -c"$PING_COUNT" -W"$PING_TIMEOUT" "$PING_HOST" 2>&1); then
-        dbg "Ping échoué vers $PING_HOST : $out"
-        # Secours sur Google DNS
-        dbg "Tentative ping secours vers 8.8.8.8 (-c${PING_COUNT} -W${PING_TIMEOUT})"
-        if ! out=$(ping -c"$PING_COUNT" -W"$PING_TIMEOUT" 8.8.8.8 2>&1); then
-            dbg "Ping secours échoué : $out"
-            return 1
-        fi
+  local out time
+  dbg "Ping vers $PING_HOST (-c${PING_COUNT} -W${PING_TIMEOUT})"
+  if ! out=$(ping -c"$PING_COUNT" -W"$PING_TIMEOUT" "$PING_HOST" 2>&1); then
+    dbg "Échec ping $PING_HOST : $out"
+    dbg "Ping secours vers 8.8.8.8"
+    if ! out=$(ping -c"$PING_COUNT" -W"$PING_TIMEOUT" 8.8.8.8 2>&1); then
+      dbg "Échec ping secours : $out"
+      return 1
     fi
-
-    dbg "Ping réussi : $out"
-
-    # On extrait le temps moyen (rtt avg) dans la ligne "rtt min/avg/max/mdev"
-    time=$(echo "$out" \
-      | grep -oP '/\K[0-9\.]+(?=/[0-9\.]+ ms$)' \
-      | tail -n1) || true
-
-    echo "${time:-}"
+  fi
+  dbg "Ping réussi : $out"
+  time=$(echo "$out" \
+    | grep -oP '/\K[0-9\.]+(?=/[0-9\.]+ ms$)' \
+    | tail -n1) || true
+  echo "${time:-}"
 }
 
-
-
-# --- Démarrage ---
+# ----- Démarrage -----
 : > "$DEBUG_FILE"
 dbg "Script démarré"
-
 check_log_file
 
-# Extraction de l'état VPN
-VPN_STATE=$(extract_last 'CONN:STATE_CHANGED \| \K\w+')
+# Dump pour debug
+dbg "----- Dump 30 dernières lignes de $LOG_FILE -----"
+tail -n 30 "$LOG_FILE" >> "$DEBUG_FILE"
+dbg "----- Fin dump -----"
 
-# Extraction de l'IP : gère les deux syntaxes Some("...") et "..."
-NEW_IP=$(extract_last 'device_ip:\s*(?:Some\()?"\K(?:\d{1,3}\.){3}\d{1,3}(?=")')
+# ----- Extraction de l’IP -----
+details_line=$(grep 'connection_details' "$LOG_FILE" | tail -n1)
+dbg "Details line: $details_line"
 
-# Extraction du nom de serveur (FR#317) ; si vide, on prend le domaine
-NEW_SERVER_NAME=$(extract_last 'Server:\s*\K[^/ ]+')
+# 1) device_ip
+NEW_IP=$(echo "$details_line" \
+  | sed -nE 's/.*device_ip: *"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)".*/\1/p')
+
+# 2) fallback server_ipv4
+if [[ -z "$NEW_IP" ]]; then
+  dbg "device_ip introuvable, fallback sur server_ipv4"
+  NEW_IP=$(echo "$details_line" \
+    | sed -nE 's/.*server_ipv4: *Some\("([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"\).*/\1/p')
+fi
+
+dbg "IP extraite: ${NEW_IP:-<vide>}"
+
+# ----- Extraction du nom de serveur -----
+connect_line=$(grep 'CONN.CONNECT:START' "$LOG_FILE" | tail -n1)
+dbg "Connect line: $connect_line"
+
+NEW_SERVER_NAME=$(echo "$connect_line" \
+  | sed -nE 's/.*Server: *([^ /]+).*/\1/p')
+
 if [[ -z "$NEW_SERVER_NAME" ]]; then
-    NEW_SERVER_NAME=$(extract_last 'Domain:\s*\K[^ ]+')
+  dbg "Server introuvable, fallback sur Domain"
+  NEW_SERVER_NAME=$(echo "$connect_line" \
+    | sed -nE 's/.*Domain: *([^ ]+).*/\1/p')
 fi
 
-dbg "VPN_STATE=$VPN_STATE, NEW_IP=${NEW_IP:-<vide>}, NEW_SERVER_NAME=${NEW_SERVER_NAME:-<vide>}"
+dbg "Server extrait: ${NEW_SERVER_NAME:-<vide>}"
 
-# Si déconnecté ou pas d'IP
-if [[ "$VPN_STATE" != "Connected" || -z "$NEW_IP" ]]; then
-    echo "⚠️ No VPN ⚠️"
-    dbg "VPN non connecté ou IP manquante"
-    exit 0
+# ----- Décision VPN -----
+if [[ -z "$NEW_IP" ]]; then
+  echo "⚠️ No VPN ⚠️"
+  dbg "→ Pas d’IP VPN, on sort"
+  exit 0
 fi
 
-# Test de connectivité
+# ----- Test connectivité -----
 if ! PING_TIME=$(check_ping); then
-    echo "⚠️ Bad connection ⚠️"
-    dbg "Échec du ping vers $PING_HOST"
-    exit 1
+  echo "⚠️ Bad connection ⚠️"
+  dbg "→ Pas d’internet"
+  exit 1
 fi
-dbg "Ping vers $PING_HOST en ${PING_TIME} ms"
+dbg "Latence mesurée: ${PING_TIME} ms"
 
-# Vérification de la latence
+# ----- Analyse latence -----
 if (( $(echo "$PING_TIME > $THRESHOLD" | bc -l) )); then
-    echo "⚠️ High latency: ${PING_TIME} ms"
-    dbg "Latence élevée (seuil=${THRESHOLD} ms)"
+  echo "⚠️ High latency: ${PING_TIME} ms"
+  dbg "→ Latence > ${THRESHOLD} ms"
 else
-    if [[ -n "$NEW_SERVER_NAME" ]]; then
-        echo "🟢 $NEW_SERVER_NAME ($NEW_IP) – ${PING_TIME} ms"
-    else
-        echo "🟢 $NEW_IP – ${PING_TIME} ms"
-        dbg "Nom de serveur manquant, affichage de l'IP seule"
-    fi
-    dbg "VPN OK"
+  if [[ -n "$NEW_SERVER_NAME" ]]; then
+    echo "🟢 $NEW_SERVER_NAME ($NEW_IP) – ${PING_TIME} ms"
+  else
+    echo "🟢 $NEW_IP – ${PING_TIME} ms"
+    dbg "→ Nom de serveur vide"
+  fi
+  dbg "→ VPN OK"
 fi
 
 exit 0
