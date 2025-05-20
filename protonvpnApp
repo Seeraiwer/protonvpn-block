@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 IFS=$'\n\t'
 
 LOG_FILE="${HOME:-$PWD}/.cache/Proton/VPN/logs/vpn-app.log"
 DEBUG_FILE="/tmp/protonvpn_debug.log"
+
+# Seuil de latence configurable
 THRESHOLD="${LATENCY_THRESHOLD:-100}"
+
+# Hôte à pinguer et paramètres
 PING_HOST="1.1.1.1"
-PING_TIMEOUT=1
+PING_TIMEOUT=1     # timeout en secondes
+PING_COUNT=2       # nombre de paquets ICMP
 
 dbg() {
     printf '%s %s\n' "[$(date '+%Y-%m-%d %H:%M:%S')]" "$*" >> "$DEBUG_FILE"
@@ -30,26 +34,35 @@ check_log_file() {
     [[ -r "$LOG_FILE" ]] || error_exit "Impossible de lire le log VPN : $LOG_FILE" 2
 }
 
+# Timeout (secondes) et nombre de paquets
+PING_TIMEOUT=1
+PING_COUNT=2
+
 check_ping() {
     local out time
-    # On augmente à 2 paquets et 2 s de timeout pour plus de fiabilité
-    dbg "Tentative ping vers $PING_HOST (-c2 -W2)"
-    if ! out=$(ping -c2 -W2 "$PING_HOST" 2>&1); then
+    dbg "Tentative ping vers $PING_HOST (-c${PING_COUNT} -W${PING_TIMEOUT})"
+
+    # Premier essai
+    if ! out=$(ping -c"$PING_COUNT" -W"$PING_TIMEOUT" "$PING_HOST" 2>&1); then
         dbg "Ping échoué vers $PING_HOST : $out"
-        # Essai sur Google DNS
-        dbg "Tentative ping secours vers 8.8.8.8"
-        if ! out=$(ping -c2 -W2 8.8.8.8 2>&1); then
+        # Secours sur Google DNS
+        dbg "Tentative ping secours vers 8.8.8.8 (-c${PING_COUNT} -W${PING_TIMEOUT})"
+        if ! out=$(ping -c"$PING_COUNT" -W"$PING_TIMEOUT" 8.8.8.8 2>&1); then
             dbg "Ping secours échoué : $out"
             return 1
         fi
     fi
+
     dbg "Ping réussi : $out"
-    # On extrait le temps moyen (rtt avg) plutôt que le premier
+
+    # On extrait le temps moyen (rtt avg) dans la ligne "rtt min/avg/max/mdev"
     time=$(echo "$out" \
       | grep -oP '/\K[0-9\.]+(?=/[0-9\.]+ ms$)' \
       | tail -n1) || true
-    echo "${time:-}" 
+
+    echo "${time:-}"
 }
+
 
 
 # --- Démarrage ---
