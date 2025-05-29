@@ -3,111 +3,50 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # — Configuration —
-DEBUG_FILE="/tmp/protonvpn_debug.log"
-THRESHOLD="${LATENCY_THRESHOLD:-100}"    # ms max acceptable
 PING_HOST="1.1.1.1"
-PING_TIMEOUT=1                           # secondes
-PING_COUNT=2                             # paquets
+PING_COUNT=2
+PING_TIMEOUT=1
 
-# — Helpers —
-dbg() {
-  printf '%s %s\n' "[$(date '+%Y-%m-%d %H:%M:%S')]" "$*" >> "$DEBUG_FILE"
-}
+# — 1) Repère la connexion VPN active (wireguard ou tun, sauf tun0) —
+vpn_line=$(
+  nmcli -t -f NAME,TYPE,DEVICE connection show --active \
+    | awk -F: '
+        # TYPE == wireguard OU (TYPE == tun ET NAME != "tun0")
+        $2=="wireguard" || ($2=="tun" && $1!="tun0") {
+          print
+          exit
+        }'
+)
 
-error_exit() {
-  echo "⚠️ $1" >&2
-  dbg "ERROR: $1"
-  exit "${2:-1}"
-}
-
-check_ping() {
-  local out time
-  dbg "Ping $PING_HOST (-c${PING_COUNT} -W${PING_TIMEOUT})"
-  if ! out=$(ping -c"$PING_COUNT" -W"$PING_TIMEOUT" "$PING_HOST" 2>&1); then
-    dbg "Ping $PING_HOST failed: $out"
-    dbg "Fallback ping 8.8.8.8"
-    if ! out=$(ping -c"$PING_COUNT" -W"$PING_TIMEOUT" 8.8.8.8 2>&1); then
-      dbg "Fallback ping failed: $out"
-      return 1
-    fi
-  fi
-  dbg "Ping success: $out"
-  time=$(echo "$out" \
-    | grep -oP '/\K[0-9\.]+(?=/[0-9\.]+ ms$)' \
-    | tail -n1) || true
-  echo "${time:-}"
-}
-
-# — Start fresh debug —
-: > "$DEBUG_FILE"
-dbg "Script démarré"
-
-# — 1) Tentative via CLI ProtonVPN si dispo —
-if command -v protonvpn &>/dev/null; then
-  dbg "Using protonvpn CLI"
-  status=$(protonvpn status 2>&1) || status=""
-  dbg "CLI output: $status"
-
-  if ! grep -qE '^Status:\s+Connected' <<<"$status"; then
-    echo "⚠️ No VPN ⚠️"
-    dbg "CLI reports not connected"
-    exit 0
-  fi
-
-  NEW_SERVER_NAME=$(awk -F': ' '/^Server Name:/{print $2}' <<<"$status" | xargs)
-  NEW_IP=$(awk -F': ' '/^Current IP:/{print $2}' <<<"$status" | xargs)
-
-# — 2) Fallback sur interface WireGuard/TUN —
-else
-  dbg "CLI absent, fallback on interface detection"
-  if ip link show wg0 &>/dev/null; then
-    IFACE=wg0
-  elif ip link show tun0 &>/dev/null; then
-    IFACE=tun0
-  else
-    echo "⚠️ No VPN ⚠️"
-    dbg "No wg0 or tun0 interface"
-    exit 0
-  fi
-
-  dbg "Interface detected: $IFACE"
-  NEW_IP=$(ip -4 addr show dev "$IFACE" \
-    | awk '/inet / {print $2}' \
-    | cut -d/ -f1 \
-    | head -n1)
-
-  # On n’a pas toujours le nom, on laisse vide
-  NEW_SERVER_NAME=""
-fi
-
-dbg "Extracted → Server='${NEW_SERVER_NAME:-<none>}', IP='${NEW_IP:-<none>}'"
-
-# — Si on n’a toujours pas d’IP, on arrête —
-if [[ -z "${NEW_IP:-}" ]]; then
+if [[ -z "$vpn_line" ]]; then
   echo "⚠️ No VPN ⚠️"
-  dbg "No IP found"
   exit 0
 fi
 
-# — Test de connectivité —
-if ! PING_TIME=$(check_ping); then
-  echo "⚠️ Bad connection ⚠️"
-  dbg "No internet via VPN"
-  exit 1
-fi
-dbg "Latency measured: ${PING_TIME} ms"
+# — 2) Parse NAME, TYPE et DEVICE —
+VPN_NAME=${vpn_line%%:*}
+_rest=${vpn_line#*:}
+VPN_TYPE=${_rest%%:*}
+VPN_IFACE=${vpn_line##*:}
 
-# — Analyse et affichage final —
-if (( $(echo "$PING_TIME > $THRESHOLD" | bc -l) )); then
-  echo "⚠️ High latency: ${PING_TIME} ms"
-  dbg "Latency > ${THRESHOLD} ms"
-else
-  if [[ -n "$NEW_SERVER_NAME" ]]; then
-    echo "🟢 $NEW_SERVER_NAME ($NEW_IP) – ${PING_TIME} ms"
-  else
-    echo "🟢 $NEW_IP – ${PING_TIME} ms"
-  fi
-  dbg "VPN OK"
+# — 3) Récupère l’IP assignée sur cette interface —
+IP_ADDR=$(ip -4 addr show dev "$VPN_IFACE" \
+          | awk '/inet / { sub(/\/.*/,"",$2); print $2; exit }')
+
+if [[ -z "$IP_ADDR" ]]; then
+  echo "⚠️ No VPN ⚠️"
+  exit 0
 fi
 
+# — 4) Test de connectivité via l’interface VPN —
+if ! ping -I "$VPN_IFACE" -c"$PING_COUNT" -W"$PING_TIMEOUT" "$PING_HOST" &>/dev/null; then
+  echo "⚠️ No VPN ⚠️"
+  exit 0
+fi
+
+LATENCY=$(ping -I "$VPN_IFACE" -c"$PING_COUNT" -W"$PING_TIMEOUT" "$PING_HOST" \
+          | awk -F'/' 'END { print $5 }')
+
+# — 5) Affichage final pour i3blocks/polybar —
+echo "$VPN_NAME ($IP_ADDR) – ${LATENCY} ms"
 exit 0
