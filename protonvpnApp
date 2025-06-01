@@ -2,51 +2,73 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# — Configuration —
-PING_HOST="1.1.1.1"
-PING_COUNT=2
-PING_TIMEOUT=1
+LOG_FILE="$HOME/.cache/Proton/VPN/logs/vpn-app.log"
+DEBUG_FILE="/tmp/protonvpn_debug.log"
 
-# — 1) Repère la connexion VPN active (wireguard ou tun, sauf tun0) —
+touch "$DEBUG_FILE"
+echo "DEBUG: Script started" > "$DEBUG_FILE"
+
+# — 1) Détecte la connexion VPN active —
 vpn_line=$(
   nmcli -t -f NAME,TYPE,DEVICE connection show --active \
-    | awk -F: '
-        # TYPE == wireguard OU (TYPE == tun ET NAME != "tun0")
-        $2=="wireguard" || ($2=="tun" && $1!="tun0") {
-          print
-          exit
-        }'
+    | grep -iE 'proton|wireguard|tun' | head -n 1
 )
+
+echo "DEBUG: Active connections:" >> "$DEBUG_FILE"
+nmcli -t -f NAME,TYPE,DEVICE connection show --active >> "$DEBUG_FILE"
+echo "DEBUG: Selected VPN line: $vpn_line" >> "$DEBUG_FILE"
 
 if [[ -z "$vpn_line" ]]; then
   echo "⚠️ No VPN ⚠️"
   exit 0
 fi
 
-# — 2) Parse NAME, TYPE et DEVICE —
 VPN_NAME=${vpn_line%%:*}
 _rest=${vpn_line#*:}
-VPN_TYPE=${_rest%%:*}
 VPN_IFACE=${vpn_line##*:}
 
-# — 3) Récupère l’IP assignée sur cette interface —
-IP_ADDR=$(ip -4 addr show dev "$VPN_IFACE" \
-          | awk '/inet / { sub(/\/.*/,"",$2); print $2; exit }')
+# — 2) Récupère l’IP publique réelle en sortie (via ifconfig.me) —
+PUB_IP=$(curl -s --max-time 2 https://ifconfig.me || echo "")
+echo "DEBUG: PUB_IP(ifconfig.me)=$PUB_IP" >> "$DEBUG_FILE"
 
-if [[ -z "$IP_ADDR" ]]; then
-  echo "⚠️ No VPN ⚠️"
+if [[ -z "$PUB_IP" ]]; then
+  echo "⚠️ No VPN ⚠️ (Impossible de récupérer l’IP publique)"
   exit 0
 fi
 
-# — 4) Test de connectivité via l’interface VPN —
-if ! ping -I "$VPN_IFACE" -c"$PING_COUNT" -W"$PING_TIMEOUT" "$PING_HOST" &>/dev/null; then
-  echo "⚠️ No VPN ⚠️"
-  exit 0
-fi
+# — 3) Récupère le code pays depuis ipinfo.io en fonction de cette IP publique —
+COUNTRY_CODE=$(curl -s --max-time 2 "https://ipinfo.io/${PUB_IP}/country" | tr -d '\n' | tr 'a-z' 'A-Z')
+echo "DEBUG: COUNTRY_CODE(ipinfo.io)=$COUNTRY_CODE" >> "$DEBUG_FILE"
 
-LATENCY=$(ping -I "$VPN_IFACE" -c"$PING_COUNT" -W"$PING_TIMEOUT" "$PING_HOST" \
-          | awk -F'/' 'END { print $5 }')
+# — 4) Pour l’affichage du nom du serveur, on lit quand même les logs ProtonVPN —
+#     Si impossible, on se rabat sur le nom de la connexion NMCLI
+LOG=$(tail -n 100 "$LOG_FILE" 2>/dev/null || echo "")
+SERVER_NAME=$(echo "$LOG" | grep -oP 'Server: *[^/ ]+' | awk '{print $2}' | tail -n 1 || echo "")
+SERVER_NAME=${SERVER_NAME:-$VPN_NAME}
 
-# — 5) Affichage final pour i3blocks/polybar —
-echo "$VPN_NAME ($IP_ADDR) – ${LATENCY} ms"
-exit 0
+echo "DEBUG: SERVER_NAME(from logs)=$SERVER_NAME" >> "$DEBUG_FILE"
+
+# — 5) Fonction pour renvoyer le drapeau associé au code pays —
+get_flag() {
+  case "$1" in
+    FR) echo "🇫🇷" ;;
+    CH) echo "🇨🇭" ;;
+    US) echo "🇺🇸" ;;
+    DE) echo "🇩🇪" ;;
+    GB|UK) echo "🇬🇧" ;;
+    NL) echo "🇳🇱" ;;
+    SE) echo "🇸🇪" ;;
+    CA) echo "🇨🇦" ;;
+    ES) echo "🇪🇸" ;;
+    IT) echo "🇮🇹" ;;
+    *) echo "🏳️" ;;  # Drapeau blanc si inconnu
+  esac
+}
+
+FLAG=$(get_flag "$COUNTRY_CODE")
+echo "DEBUG: FLAG(get_flag)=$FLAG" >> "$DEBUG_FILE"
+
+# — 6) Affichage final —
+echo "$FLAG $SERVER_NAME ($PUB_IP)"
+echo
+
