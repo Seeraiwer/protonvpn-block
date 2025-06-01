@@ -2,53 +2,54 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-LOG_FILE="$HOME/.cache/Proton/VPN/logs/vpn-app.log"
 DEBUG_FILE="/tmp/protonvpn_debug.log"
-
 touch "$DEBUG_FILE"
-echo "DEBUG: Script started" > "$DEBUG_FILE"
+echo "DEBUG: Script started at $(date)" > "$DEBUG_FILE"
 
-# — 1) Détecte la connexion VPN active —
+# 1) Détecter toute interface VPN active (wireguard ou tun, Proton ou autre)
 vpn_line=$(
   nmcli -t -f NAME,TYPE,DEVICE connection show --active \
-    | grep -iE 'proton|wireguard|tun' | head -n 1
+    | grep -iE 'proton|wireguard|tun' | head -n 1 || true
 )
-
-echo "DEBUG: Active connections:" >> "$DEBUG_FILE"
-nmcli -t -f NAME,TYPE,DEVICE connection show --active >> "$DEBUG_FILE"
-echo "DEBUG: Selected VPN line: $vpn_line" >> "$DEBUG_FILE"
+echo "DEBUG: Active connections list:" >> "$DEBUG_FILE"
+nmcli -t -f NAME,TYPE,DEVICE connection show --active >> "$DEBUG_FILE" 2>>"$DEBUG_FILE"
+echo "DEBUG: Selected vpn_line='$vpn_line'" >> "$DEBUG_FILE"
 
 if [[ -z "$vpn_line" ]]; then
   echo "⚠️ No VPN ⚠️"
+  echo                                    # néces­saire pour i3blocks
+  echo "DEBUG: No vpn_line detected, exiting." >> "$DEBUG_FILE"
   exit 0
 fi
 
+# Extraction du nom et de l’interface
 VPN_NAME=${vpn_line%%:*}
-_rest=${vpn_line#*:}
 VPN_IFACE=${vpn_line##*:}
+echo "DEBUG: VPN_NAME='$VPN_NAME', VPN_IFACE='$VPN_IFACE'" >> "$DEBUG_FILE"
 
-# — 2) Récupère l’IP publique réelle en sortie (via ifconfig.me) —
+# 2) Récupérer l’IP publique réelle (via ifconfig.me)
 PUB_IP=$(curl -s --max-time 2 https://ifconfig.me || echo "")
-echo "DEBUG: PUB_IP(ifconfig.me)=$PUB_IP" >> "$DEBUG_FILE"
+echo "DEBUG: PUB_IP(ifconfig.me)='$PUB_IP'" >> "$DEBUG_FILE"
 
 if [[ -z "$PUB_IP" ]]; then
-  echo "⚠️ No VPN ⚠️ (Impossible de récupérer l’IP publique)"
+  echo "⚠️ No VPN ⚠️ (no public IP)"
+  echo
+  echo "DEBUG: PUB_IP is empty, exiting." >> "$DEBUG_FILE"
   exit 0
 fi
 
-# — 3) Récupère le code pays depuis ipinfo.io en fonction de cette IP publique —
-COUNTRY_CODE=$(curl -s --max-time 2 "https://ipinfo.io/${PUB_IP}/country" | tr -d '\n' | tr 'a-z' 'A-Z')
-echo "DEBUG: COUNTRY_CODE(ipinfo.io)=$COUNTRY_CODE" >> "$DEBUG_FILE"
+# 3) Récupérer le code pays à partir de cette IP (ipinfo.io)
+COUNTRY_CODE=$(curl -s --max-time 2 "https://ipinfo.io/${PUB_IP}/country" \
+  | tr -d '\n' | tr 'a-z' 'A-Z' || echo "")
+echo "DEBUG: COUNTRY_CODE(ipinfo.io)='$COUNTRY_CODE'" >> "$DEBUG_FILE"
 
-# — 4) Pour l’affichage du nom du serveur, on lit quand même les logs ProtonVPN —
-#     Si impossible, on se rabat sur le nom de la connexion NMCLI
-LOG=$(tail -n 100 "$LOG_FILE" 2>/dev/null || echo "")
+# 4) Extraire le nom du serveur ProtonVPN (si ProtonVPN) ou fallback sur VPN_NAME
+LOG=$(tail -n 100 "$HOME/.cache/Proton/VPN/logs/vpn-app.log" 2>/dev/null || echo "")
 SERVER_NAME=$(echo "$LOG" | grep -oP 'Server: *[^/ ]+' | awk '{print $2}' | tail -n 1 || echo "")
 SERVER_NAME=${SERVER_NAME:-$VPN_NAME}
+echo "DEBUG: SERVER_NAME(from logs)='$SERVER_NAME'" >> "$DEBUG_FILE"
 
-echo "DEBUG: SERVER_NAME(from logs)=$SERVER_NAME" >> "$DEBUG_FILE"
-
-# — 5) Fonction pour renvoyer le drapeau associé au code pays —
+# 5) Mapper COUNTRY_CODE → drapeau
 get_flag() {
   case "$1" in
     FR) echo "🇫🇷" ;;
@@ -66,9 +67,10 @@ get_flag() {
 }
 
 FLAG=$(get_flag "$COUNTRY_CODE")
-echo "DEBUG: FLAG(get_flag)=$FLAG" >> "$DEBUG_FILE"
+echo "DEBUG: FLAG(get_flag)='$FLAG'" >> "$DEBUG_FILE"
 
-# — 6) Affichage final —
+# 6) Affichage final (deux lignes : texte + ligne vide)
 echo "$FLAG $SERVER_NAME ($PUB_IP)"
 echo
 
+echo "DEBUG: Script completed at $(date)" >> "$DEBUG_FILE"
