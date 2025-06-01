@@ -1,47 +1,48 @@
----
+# 🌍 ProtonVPN Status for i3blocks
 
-# 🔒 ProtonVPN Status for i3blocks
+This script displays the **current status of ProtonVPN** in your **i3blocks bar**, including:
 
-This script **monitors the connection status of ProtonVPN** and displays relevant information in **i3blocks**.
-
-✔ **Detects active/disconnected VPN status**  
-✔ **Displays VPN server name and IP address**  
-✔ **Checks internet connectivity**  
-✔ **Indicates high latency warnings**  
-✔ **Compatible with i3blocks**
+- ✅ Active/disconnected detection  
+- 🌐 IP address and VPN server name  
+- 🏳️ Country flag based on public exit IP  
+- 🛜 Internet connectivity check  
+- 💥 Minimal dependencies  
 
 ---
 
 ## 🛠 Installation
 
-### 1️⃣ **Clone the repository**
+### 1️⃣ Clone the repository
 ```bash
 git clone https://github.com/your-username/protonvpn-status.git
 cd protonvpn-status
 ```
 
-### 2️⃣ **Install dependencies**
-Ensure you have the necessary tools:
+### 2️⃣ Install required tools
+Make sure you have the following dependencies installed:
 ```bash
-sudo pacman -S jq bc curl
+sudo pacman -S curl jq
 ```
 
-### 3️⃣ **Copy the script to `/usr/local/bin/`**
+### 3️⃣ Copy the script to your system path
 ```bash
 sudo cp protonvpn_status.sh /usr/local/bin/protonvpn_status.sh
 sudo chmod +x /usr/local/bin/protonvpn_status.sh
 ```
 
-### 4️⃣ **Add to i3blocks**
-Edit your `~/.config/i3blocks/config` file and add:
+### 4️⃣ Add it to i3blocks
+Edit your `~/.config/i3/i3blocks.conf` and add:
 ```ini
 [protonvpn]
 command=/usr/local/bin/protonvpn_status.sh
 interval=10
-label=🔒
+markup=pango
 ```
 
-### 5️⃣ **Reload i3blocks**
+> 💡 Ensure your i3bar font supports emojis, for example:
+> `font pango: Noto Sans Regular 10, Noto Color Emoji 10`
+
+### 5️⃣ Reload i3blocks
 ```bash
 pkill -SIGUSR1 i3blocks
 ```
@@ -52,43 +53,53 @@ i3-msg restart
 
 ---
 
-## ⚡ Status Indicators
+## 📊 What It Shows
 
-- 🟥 **Red (`#FF0000`)** → VPN is disconnected or unstable.
-- 🟨 **Yellow (`#FFFF00`)** → VPN is connecting.
-- 🟪 **Purple (`#d335ff`)** → VPN is active and running.
-- 🚀 **Displays the server name and IP when connected.**
+- 🏳️ Country flag based on the public VPN IP (via `ipinfo.io`)
+- 🧭 Server name (from ProtonVPN logs)
+- 🌐 Exit IP address
 
----
+### Example output:
+```
+🇨🇭 node-ch-14 (185.45.56.92)
+```
 
-## 🔗 How It Works
-
-1. **Reads ProtonVPN logs** from `$HOME/.cache/Proton/VPN/logs/vpn-app.log`.
-2. **Checks the last connection status**:
-   - If **disconnected**, it shows `"No VPN"`.
-   - If **no valid server info is found**, it shows `"Connecting..."`.
-   - Otherwise, it **displays the server name and IP address**.
-3. **Performs an internet check** using `ping`.
-4. **Detects high latency** (> 100ms) and warns if needed.
+### Disconnected:
+```
+⚠️ No VPN ⚠️
+```
 
 ---
 
-## 📜 License
+## 🔍 How It Works
 
-This project is licensed under the **MIT License**.  
-See the [LICENSE](LICENSE) file for more details.
-
----
-
-## 🚀 Contributing
-
-Contributions are welcome!  
-- Fork the project 🍴  
-- Create a branch 🛠️ (`git checkout -b feature-my-new-feature`)  
-- Submit a PR 🚀  
+1. Detects the active VPN interface using `nmcli`.
+2. Reads ProtonVPN logs from:
+   ```
+   ~/.cache/Proton/VPN/logs/vpn-app.log
+   ```
+3. Extracts the server name and local/public IPs.
+4. Queries `https://ipinfo.io/<ip>/country` for the country code.
+5. Displays the corresponding country flag and server name.
 
 ---
 
-## 📩 Contact
+## ✅ Supported Country Flags
 
-💬 **Have suggestions or issues?** Open an [Issue](https://github.com/your-username/protonvpn-status/issues)  
+| Country        | Code | Flag |
+|----------------|------|------|
+| France         | FR   | 🇫🇷  |
+| Switzerland    | CH   | 🇨🇭  |
+| United States  | US   | 🇺🇸  |
+| Germany        | DE   | 🇩🇪  |
+| United Kingdom | GB   | 🇬🇧  |
+| Netherlands    | NL   | 🇳🇱  |
+| Sweden         | SE   | 🇸🇪  |
+| Canada         | CA   | 🇨🇦  |
+| Spain          | ES   | 🇪🇸  |
+| Italy          | IT   | 🇮🇹  |
+| Unknown        | —    | 🏳️  |
+
+> 🎯 You can add more flags in the `get_flag()` function of the script.
+
+
