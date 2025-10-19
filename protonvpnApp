@@ -248,9 +248,9 @@ main() {
   # Initialisation
   init
   
-  # 1) Détecter toute interface VPN active
+  # 1) Détecter toute interface VPN active (en excluant Tailscale)
   local vpn_line
-  vpn_line=$(nmcli -t -f NAME,TYPE,DEVICE connection show --active | grep -iE 'proton|wireguard|tun|vpn' | head -n 1 || true)
+  vpn_line=$(nmcli -t -f NAME,TYPE,DEVICE connection show --active | grep -iE 'proton|wireguard|tun|vpn' | grep -v 'tailscale' | head -n 1 || true)
   
   debug_log "Active connections list:"
   if [[ $DEBUG_MODE -eq 1 ]]; then
