@@ -5,36 +5,30 @@ This script displays the **current status of ProtonVPN** in your **i3blocks bar*
 - ✅ Active/disconnected detection  
 - 🌐 IP address and VPN server name  
 - 🏳️ Country flag based on public exit IP  
-- 🛜 Internet connectivity check  
-- 💥 Minimal dependencies  
+- 🧠 Cache to avoid repeated network calls  
+- 💥 Minimal dependencies
 
 ---
 
 ## 🛠 Installation
 
-### 1️⃣ Clone the repository
-```bash
-git clone https://github.com/your-username/protonvpn-status.git
-cd protonvpn-status
-```
-
-### 2️⃣ Install required tools
+### 1️⃣ Install required tools
 Make sure you have the following dependencies installed:
 ```bash
-sudo pacman -S curl jq
+sudo pacman -S curl networkmanager
 ```
 
-### 3️⃣ Copy the script to your system path
+### 2️⃣ Copy the script to your system path
 ```bash
-sudo cp protonvpn_status.sh /usr/local/bin/protonvpn_status.sh
-sudo chmod +x /usr/local/bin/protonvpn_status.sh
+sudo cp protonvpnApp /usr/local/bin/protonvpnApp
+sudo chmod +x /usr/local/bin/protonvpnApp
 ```
 
-### 4️⃣ Add it to i3blocks
+### 3️⃣ Add it to i3blocks
 Edit your `~/.config/i3/i3blocks.conf` and add:
 ```ini
 [protonvpn]
-command=/usr/local/bin/protonvpn_status.sh
+command=/usr/local/bin/protonvpnApp
 interval=10
 markup=pango
 ```
@@ -42,7 +36,7 @@ markup=pango
 > 💡 Ensure your i3bar font supports emojis, for example:
 > `font pango: Noto Sans Regular 10, Noto Color Emoji 10`
 
-### 5️⃣ Reload i3blocks
+### 4️⃣ Reload i3blocks
 ```bash
 pkill -SIGUSR1 i3blocks
 ```
@@ -78,9 +72,43 @@ i3-msg restart
    ```
    ~/.cache/Proton/VPN/logs/vpn-app.log
    ```
-3. Extracts the server name and local/public IPs.
+3. Extracts the server name and public IP.
 4. Queries `https://ipinfo.io/<ip>/country` for the country code.
 5. Displays the corresponding country flag and server name.
+
+---
+
+## ⚙️ Configuration
+
+You can override defaults by creating:
+```
+~/.config/protonvpn-status/config
+```
+
+Example:
+```bash
+DEBUG_MODE=1
+CACHE_TIMEOUT=120
+TIMEOUT=3
+```
+
+Optional custom flags file:
+```
+~/.config/protonvpn-status/flags
+```
+Format:
+```
+FR:🇫🇷
+CH:🇨🇭
+```
+
+---
+
+## 🧪 CLI Options
+
+- `--debug` enables logging to `/tmp/protonvpn_debug.log`
+- `--clear-cache` removes cached IP/country/server files
+- `--help` prints usage
 
 ---
 
@@ -102,4 +130,16 @@ i3-msg restart
 
 > 🎯 You can add more flags in the `get_flag()` function of the script.
 
+---
 
+## 🗂 Notes
+
+- Cache lives in `/tmp/protonvpn_status` (IP, country, server name).
+- IPv6 public IPs are supported.
+- Tailscale connections are ignored on purpose.
+
+---
+
+## 📜 License
+
+GNU AFFERO GENERAL PUBLIC LICENSE
