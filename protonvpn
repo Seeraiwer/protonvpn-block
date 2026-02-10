@@ -15,6 +15,7 @@ CACHE_TIMEOUT=300                                 # Durée de validité du cache
 VPN_LOG_PATH="$HOME/.cache/Proton/VPN/logs/vpn-app.log"  # Chemin des logs ProtonVPN
 CONFIG_DIR="$HOME/.config/protonvpn-status"       # Dossier de configuration
 CONFIG_FILE="$CONFIG_DIR/config"                  # Fichier de configuration
+TOGGLE_FILE="$CACHE_DIR/show_ip_toggle"           # Fichier pour l'état du toggle IP
 IP_SERVICES=(                                     # Services pour obtenir l'IP publique
   "https://ifconfig.me"
   "https://api.ipify.org"
@@ -275,10 +276,35 @@ get_flag() {
   esac
 }
 
+# Fonction pour basculer l'affichage de l'IP
+toggle_ip_display() {
+  if [[ -f "$TOGGLE_FILE" ]]; then
+    rm -f "$TOGGLE_FILE"
+    debug_log "IP display toggled OFF"
+  else
+    touch "$TOGGLE_FILE"
+    debug_log "IP display toggled ON"
+  fi
+}
+
+# Fonction pour vérifier si l'IP doit être affichée
+should_show_ip() {
+  [[ -f "$TOGGLE_FILE" ]]
+}
+
 # Fonction principale
 main() {
   # Initialisation
   init
+  
+  # Gérer les clics de souris (i3blocks passe BLOCK_BUTTON)
+  if [[ -n "${BLOCK_BUTTON:-}" ]]; then
+    case "$BLOCK_BUTTON" in
+      1|2|3)  # Clic gauche, milieu ou droit
+        toggle_ip_display
+        ;;
+    esac
+  fi
   
   # 1) Détecter toute interface VPN active (en excluant Tailscale)
   local vpn_line
@@ -336,8 +362,14 @@ main() {
   flag=$(get_flag "$country_code")
   debug_log "FLAG='$flag'"
   
-  # 6) Affichage final
-  echo "$flag $server_name ($pub_ip)"
+  # 6) Affichage final - avec ou sans IP selon l'état du toggle
+  if should_show_ip; then
+    echo "$flag $server_name ($pub_ip)"
+    debug_log "Displaying with IP: $flag $server_name ($pub_ip)"
+  else
+    echo "$flag $server_name"
+    debug_log "Displaying without IP: $flag $server_name"
+  fi
   echo
   
   debug_log "Script completed at $(date)"
